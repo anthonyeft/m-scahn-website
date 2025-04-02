@@ -1,8 +1,7 @@
 import numpy as np
 import cv2
 from skimage import segmentation, graph
-from utils import merge_mean_color, _weight_mean_color
-
+from helpers import merge_mean_color, _weight_mean_color
 
 def extract_main_contour(mask):
     _, binary_mask = cv2.threshold(mask.astype(np.float32), 0.5, 1, cv2.THRESH_BINARY)
