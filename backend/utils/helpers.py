@@ -41,3 +41,47 @@ def apply_color_constancy_no_gamma(img, power=6):
 
     img = np.clip(np.multiply(img, scale), 0, 255).astype('uint8')
     return img.astype(img_dtype)
+
+def align_mask(mask):
+    mask = mask.astype(np.uint8) * 255
+
+    # Calculate image moments
+    moments = cv2.moments(mask)
+
+    if moments['m00'] == 0:
+        return 0  # Return early if mask is empty
+
+    # Calculate centroid (center of mass)
+    cx = int(moments['m10'] / moments['m00'])
+    cy = int(moments['m01'] / moments['m00'])
+
+    # Calculate central moments for covariance matrix
+    mu11 = moments['mu11']
+    mu20 = moments['mu20']
+    mu02 = moments['mu02']
+
+    # Calculate covariance matrix and its eigenvectors
+    covariance_matrix = np.array([[mu20, mu11], [mu11, mu02]])
+    eigenvalues, eigenvectors = np.linalg.eig(covariance_matrix)
+
+    # Calculate angle of rotation (in degrees)
+    angle = -np.arctan2(eigenvectors[0, 1], eigenvectors[0, 0]) * (180 / np.pi)
+
+    # Center of the image
+    image_center = (mask.shape[1] // 2, mask.shape[0] // 2)
+
+    # Rotation matrix (includes translation to re-center the image)
+    rotation_matrix = cv2.getRotationMatrix2D((cx, cy), angle, 1.0)
+    tx = image_center[0] - cx
+    ty = image_center[1] - cy
+    rotation_matrix[0, 2] += tx  # Translation in x
+    rotation_matrix[1, 2] += ty  # Translation in y
+
+    # Rotate and translate mask
+    rotated_mask = cv2.warpAffine(mask, rotation_matrix, (mask.shape[1], mask.shape[0]))
+
+    # convert mask back 0-1 range and binary
+    rotated_mask = rotated_mask / 255
+    rotated_mask = np.where(rotated_mask > 0.5, 1, 0)
+
+    return rotated_mask
