@@ -1,5 +1,10 @@
 fastapi
 uvicorn
-onnxruntime
-pillow
 python-multipart
+numpy
+opencv-python-headless
+scikit-image
+pydantic
+python-dotenv
+scikit-learn
+zlib_wrapper

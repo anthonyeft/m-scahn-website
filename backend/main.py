@@ -1,42 +1,59 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-from PIL import Image
 import numpy as np
-import onnxruntime as ort
-import io
-
-from utils import preprocess_image
+import cv2
+import base64
+import zlib
+import json
+from utils.helpers import decode_image, apply_color_constancy, align_mask
+from utils.abc_metrics import calculate_abc_score
 
 app = FastAPI()
 
-# Allow all origins (secure this later)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Load ONNX models
-clf_session = ort.InferenceSession("models/caformer_b36.onnx")
-seg_session = ort.InferenceSession("models/mit_unet.onnx")
+class ABCInput(BaseModel):
+    image_base64: str
+    mask_compressed: str  # zlib-compressed JSON-encoded list
 
-@app.post("/predict")
-async def predict(file: UploadFile = File(...)):
-    image_bytes = await file.read()
-    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+class EvolutionInput(BaseModel):
+    mask1_compressed: str
+    mask2_compressed: str
 
-    input_tensor = preprocess_image(image)
+def decompress_mask(compressed_str):
+    decompressed = zlib.decompress(base64.b64decode(compressed_str)).decode("utf-8")
+    return np.array(json.loads(decompressed)).astype(np.uint8)
 
-    # Classification
-    clf_output = clf_session.run(None, {"input": input_tensor})[0]
-    predicted_class = int(np.argmax(clf_output, axis=1))
+@app.post("/analyze")
+def analyze(input_data: ABCInput):
+    image = decode_image(input_data.image_base64)
+    mask = decompress_mask(input_data.mask_compressed)
+    image_corrected = apply_color_constancy(image)
 
-    # Segmentation (optional)
-    seg_output = seg_session.run(None, {"input": input_tensor})[0]
-    seg_mask = (seg_output[0] > 0.5).astype(np.uint8)  # Simplified mask
+    result = calculate_abc_score(image_corrected, mask)
+    return result
 
-    return {
-        "diagnosis": predicted_class,
-        "segmentation_shape": str(seg_mask.shape),
-    }
+@app.post("/evolve")
+def evolve(input_data: EvolutionInput):
+    mask1 = decompress_mask(input_data.mask1_compressed)
+    mask2 = decompress_mask(input_data.mask2_compressed)
+
+    # Align both masks
+    aligned1 = align_mask(mask1)
+    aligned2 = align_mask(mask2)
+
+    # Overlay difference: white for mask1, red for mask2 only
+    overlay = np.zeros((aligned1.shape[0], aligned1.shape[1], 3), dtype=np.uint8)
+    overlay[aligned1 == 1] = [255, 255, 255]  # White
+    overlay[aligned2 == 1] = [255, 0, 0]      # Red (overwrites white if overlap)
+
+    _, buffer = cv2.imencode(".png", overlay)
+    encoded_image = base64.b64encode(buffer).decode("utf-8")
+    return {"overlay_image_base64": f"data:image/png;base64,{encoded_image}"}
