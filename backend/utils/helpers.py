@@ -85,14 +85,3 @@ def align_mask(mask):
     rotated_mask = np.where(rotated_mask > 0.5, 1, 0)
 
     return rotated_mask
-
-def _weight_mean_color(graph, src, dst, n):
-    diff = graph.nodes[dst]['mean color'] - graph.nodes[n]['mean color']
-    diff = np.linalg.norm(diff)
-    return {'weight': diff}
-
-def merge_mean_color(graph, src, dst):
-    graph.nodes[dst]['total color'] += graph.nodes[src]['total color']
-    graph.nodes[dst]['pixel count'] += graph.nodes[src]['pixel count']
-    graph.nodes[dst]['mean color'] = (graph.nodes[dst]['total color'] /
-                                      graph.nodes[dst]['pixel count'])

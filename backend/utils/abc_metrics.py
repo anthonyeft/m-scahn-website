@@ -1,7 +1,16 @@
 import numpy as np
 import cv2
 from skimage import segmentation, graph
-from helpers import merge_mean_color, _weight_mean_color
+
+def _weight_mean_color(graph, src, dst, n):
+    diff = graph.nodes[dst]['mean color'] - graph.nodes[n]['mean color']
+    diff = np.linalg.norm(diff)
+    return {'weight': diff}
+
+def merge_mean_color(graph, src, dst):
+    graph.nodes[dst]['total color'] += graph.nodes[src]['total color']
+    graph.nodes[dst]['pixel count'] += graph.nodes[src]['pixel count']
+    graph.nodes[dst]['mean color'] = (graph.nodes[dst]['total color'] / graph.nodes[dst]['pixel count'])
 
 def extract_main_contour(mask):
     _, binary_mask = cv2.threshold(mask.astype(np.float32), 0.5, 1, cv2.THRESH_BINARY)
