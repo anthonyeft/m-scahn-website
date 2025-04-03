@@ -31,21 +31,44 @@ export default function SingleAnalysisPage() {
     }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!imageFile) return
 
     setIsLoading(true)
 
-    // In a real application, you would upload the image to your server
-    // For this demo, we'll simulate processing with a timeout
-    setTimeout(() => {
-      // Navigate to results page with the image data
-      // In a real app, you would store the result in a database or state management
+    try {
+      // Create form data to send the image
+      const formData = new FormData()
+      formData.append('image', imageFile)
+
+      // Send to your Render/Uvicorn server
+      const response = await fetch(`${process.env.NEXT_PUBLIC_ANALYZE_API_URL}`, {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) {
+        throw new Error('Server error: ' + response.status)
+      }
+
+      // Get analysis results
+      const result = await response.json()
+      
+      // Store results in localStorage
       localStorage.setItem("analysisImage", imagePreview as string)
+      localStorage.setItem("analysisResult", JSON.stringify(result))
+      
+      // Navigate to results page
       router.push("/single-analysis/results")
-    }, 2000)
+    } catch (error) {
+      console.error('Error analyzing image:', error)
+      // Handle error (show message to user)
+      alert('Failed to analyze image. Please try again.')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
