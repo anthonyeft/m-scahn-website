@@ -21,6 +21,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# TEMPORARY
+from fastapi import UploadFile, File
+
+@app.post("/upload-model")
+async def upload_model(file: UploadFile = File(...)):
+    save_path = f"/persistent/models/{file.filename}"
+    with open(save_path, "wb") as f:
+        f.write(await file.read())
+    return {"status": "uploaded", "path": save_path}
+
 SEGMENTATION_MODEL_PATH = os.environ.get("SEGMENTATION_MODEL_PATH", "/persistent/models/segmentation_model.onnx")
 CLASSIFICATION_MODEL_PATH = os.environ.get("CLASSIFICATION_MODEL_PATH", "/persistent/models/classification_model.onnx")
 
