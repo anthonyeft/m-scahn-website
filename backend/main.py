@@ -9,7 +9,7 @@ import json
 import os
 from utils.helpers import decode_image, apply_color_constancy, apply_color_constancy_no_gamma
 from utils.abc_metrics import calculate_abc_score
-from utils.onnx_models import SegmentationModel, ClassificationModel, process_image_with_models
+from utils.onnx_models import SegmentationModel, ClassificationModel, process_image_classification
 
 app = FastAPI()
 
@@ -22,7 +22,6 @@ app.add_middleware(
 )
 
 # Initialize models on startup
-# Change these paths to where your ONNX models are stored
 SEGMENTATION_MODEL_PATH = os.environ.get("SEGMENTATION_MODEL_PATH", "./models/segmentation_model.onnx")
 CLASSIFICATION_MODEL_PATH = os.environ.get("CLASSIFICATION_MODEL_PATH", "./models/classification_model.onnx")
 
@@ -32,7 +31,6 @@ classification_model = ClassificationModel(CLASSIFICATION_MODEL_PATH)
 
 class ABCInput(BaseModel):
     image_base64: str
-    mask_compressed: str = None  # Optional now, as we'll generate the mask with the segmentation model
 
 class EvolutionInput(BaseModel):
     mask1_compressed: str
@@ -52,26 +50,9 @@ def compress_mask(mask):
 
 @app.post("/analyze")
 def analyze(input_data: ABCInput):
-    # Use segmentation and classification models to process the image
-    if input_data.mask_compressed is None:
-        mask, classification_result, processed_image_base64, contour_image_base64 = process_image(
-            input_data.image_base64, segmentation_model, classification_model
-        )
-    else:
-        # Use the provided mask (for debugging)
-        mask = decompress_mask(input_data.mask_compressed)
-        image = decode_image(input_data.image_base64)
-        image_corrected = apply_color_constancy(image)
-        classification_result = classification_model.predict(image_corrected)
-        
-        # Generate processed image for response
-        image_no_gamma = apply_color_constancy_no_gamma(image.copy())
-        _, buffer = cv2.imencode(".png", cv2.cvtColor(image_no_gamma, cv2.COLOR_RGB2BGR))
-        processed_image_base64 = f"data:image/png;base64,{base64.b64encode(buffer).decode('utf-8')}"
-        contour_image_base64 = processed_image_base64  # Use same image as fallback
+    classification_result, processed_image_base64, contour_image_base64 = process_image_classification(input_data.image_base64, segmentation_model, classification_model)
     
     # Calculate ABC scores using the color corrected image
-    image_corrected = apply_color_constancy(decode_image(input_data.image_base64))
     abc_result = calculate_abc_score(image_corrected, mask)
     
     # Combine results

@@ -9,6 +9,11 @@ def decode_image(base64_str):
     image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
     return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
+# Encode images for response
+def encode_image(img):
+    _, buffer = cv2.imencode(".png", cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+    return f"data:image/png;base64,{base64.b64encode(buffer).decode('utf-8')}"
+
 def decode_mask(mask_array):
     return np.array(mask_array).astype(np.uint8)
 

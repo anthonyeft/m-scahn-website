@@ -2,8 +2,9 @@ import numpy as np
 import cv2
 import onnxruntime as ort
 import base64
-from .helpers import apply_color_constancy_no_gamma, apply_color_constancy
-from .helpers import decode_image
+from .helpers import apply_color_constancy_no_gamma, apply_color_constancy, encode_image, decode_image
+from .abc_metrics import calculate_abc_score
+
 
 class SegmentationModel:
     def __init__(self, model_path):
@@ -20,14 +21,13 @@ class SegmentationModel:
         self.input_width = self.input_shape[3]
         
     def preprocess(self, image):
-        # Resize image to model's input dimensions
         image_resized = cv2.resize(image, (self.input_width, self.input_height))
-        # Convert to float32 for normalization
         image_float = image_resized.astype(np.float32)
-        # Normalize with ImageNet mean and std
+        
         mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
         std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
         normalized_image = (image_float / 255.0 - mean) / std
+        
         # Transpose from HWC to NCHW format
         image_preprocessed = np.transpose(normalized_image, (2, 0, 1))
         # Add batch dimension
@@ -35,7 +35,6 @@ class SegmentationModel:
         return image_preprocessed
     
     def predict(self, image):
-        # Preprocess the image
         preprocessed_input = self.preprocess(image)
         
         # Run inference
@@ -49,7 +48,7 @@ class SegmentationModel:
         mask = cv2.resize(mask, (original_w, original_h))
         
         # Threshold to get binary mask
-        binary_mask = (mask > 0.5).astype(np.uint8)
+        _, binary_mask = cv2.threshold(mask.astype(np.float32), 0.5, 1, cv2.THRESH_BINARY).astype(np.uint8)
         
         return binary_mask
 
@@ -69,17 +68,16 @@ class ClassificationModel:
         self.input_width = self.input_shape[3]
         
         # Define class names (adjust based on your model)
-        self.classes = ["Benign", "Melanoma"]
+        self.classes = ["Melanoma", "Benign Nevus", "Basal Cell Carcinoma", "Squamous Cell Carcinoma", "Actinic Keratosis", "Vascular Lesion", "Dermatofibroma"]
         
     def preprocess(self, image):
-        # Resize image to model's input dimensions
         image_resized = cv2.resize(image, (self.input_width, self.input_height))
-        # Convert to float32 for normalization
         image_float = image_resized.astype(np.float32)
-        # Normalize with ImageNet mean and std
+
         mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
         std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
         normalized_image = (image_float / 255.0 - mean) / std
+        
         # Transpose from HWC to NCHW format
         image_preprocessed = np.transpose(normalized_image, (2, 0, 1))
         # Add batch dimension
@@ -104,14 +102,10 @@ class ClassificationModel:
             "confidence_score": float(confidence_score)
         }
 
-# Function to properly format and return images in main.py
 
-def process_image(image_data, segmentation_model, classification_model):
+def process_image_classification(image_data, segmentation_model, classification_model):
     # Decode the base64 image to numpy array
     image = decode_image(image_data)
-    
-    # Save original image
-    original_image = image.copy()
     
     # Apply color constancy without gamma for display
     image_no_gamma = apply_color_constancy_no_gamma(image.copy())
@@ -121,24 +115,22 @@ def process_image(image_data, segmentation_model, classification_model):
 
     # Generate mask using segmentation model
     mask = segmentation_model.predict(image_gamma)
-    binary_mask = mask.copy()
     
     # Find contours for drawing on processed image
-    contours, _ = cv2.findContours(binary_mask.astype(np.uint8), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    main_contour = max(contours, key=cv2.contourArea) if contours else None
+
+    # Get ABC metrics
+    abc_results = calculate_abc_score(image_no_gamma, mask, main_contour)
 
     # Draw contours over the processed image
     contour_image = image_no_gamma.copy()
-    cv2.drawContours(contour_image, contours, -1, (0, 255, 0), 3)
+    cv2.drawContours(contour_image, main_contour, -1, (0, 255, 0), 3)
     
     # Get classification results
     classification_results = classification_model.predict(image_gamma)
     
-    # Encode images for response
-    def encode_image(img):
-        _, buffer = cv2.imencode(".png", cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
-        return f"data:image/png;base64,{base64.b64encode(buffer).decode('utf-8')}"
-    
     processed_image = encode_image(image_no_gamma)
     contour_image = encode_image(contour_image)
     
-    return mask, classification_results, processed_image, contour_image
+    return classification_results, processed_image, contour_image, abc_results

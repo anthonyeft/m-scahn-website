@@ -12,13 +12,6 @@ def merge_mean_color(graph, src, dst):
     graph.nodes[dst]['pixel count'] += graph.nodes[src]['pixel count']
     graph.nodes[dst]['mean color'] = (graph.nodes[dst]['total color'] / graph.nodes[dst]['pixel count'])
 
-def extract_main_contour(mask):
-    _, binary_mask = cv2.threshold(mask.astype(np.float32), 0.5, 1, cv2.THRESH_BINARY)
-    contours, _ = cv2.findContours(binary_mask.astype(np.uint8), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    if len(contours) == 0:
-        return None
-    return max(contours, key=cv2.contourArea)
-
 
 def calculate_color_asymmetry(image, mask, traits):
     lab_image = cv2.cvtColor(image, cv2.COLOR_RGB2LAB)
@@ -95,8 +88,15 @@ def calculate_asymmetry(image, mask, traits):
     return points / 2
 
 
-def calculate_border_irregularity(image, mask, contour, traits,
-                                   circularity_threshold=0.2, convexity_threshold=0.95, edge_threshold=0.8):
+def calculate_border_irregularity(
+    image,
+    mask,
+    contour,
+    traits,
+    circularity_threshold=0.2,
+    convexity_threshold=0.95, 
+    edge_threshold=0.8
+):
     points = 0
     mask = mask.astype(np.uint8) * 255
 
@@ -161,12 +161,11 @@ def calculate_color_count(image, mask, traits):
     if score >= 1:
         traits.append("High number of unique colors")
 
-    return score, None  # Skip color image overlay for backend
+    return score
 
 
-def calculate_abc_score(image, mask):
+def calculate_abc_score(image, mask, contour):
     traits = []
-    contour = extract_main_contour(mask)
     if contour is None:
         return {
             "asymmetry": 0,
@@ -177,11 +176,11 @@ def calculate_abc_score(image, mask):
 
     a = calculate_asymmetry(image, mask, traits)
     b = calculate_border_irregularity(image, mask, contour, traits)
-    c, _ = calculate_color_count(image, mask, traits)
+    c = calculate_color_count(image, mask, traits)
 
     return {
-        "asymmetry": round(a, 3),
-        "border_irregularity": round(b, 3),
-        "color": round(c, 3),
+        "asymmetry": round(a, 2),
+        "border_irregularity": round(b, 2),
+        "color": round(c, 2),
         "traits": traits
     }
