@@ -20,9 +20,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize models on startup
-SEGMENTATION_MODEL_PATH = os.environ.get("SEGMENTATION_MODEL_PATH", "./models/segmentation_model.onnx")
-CLASSIFICATION_MODEL_PATH = os.environ.get("CLASSIFICATION_MODEL_PATH", "./models/classification_model.onnx")
+SEGMENTATION_MODEL_PATH = os.environ.get("SEGMENTATION_MODEL_PATH", "/persistent/models/segmentation_model.onnx")
+CLASSIFICATION_MODEL_PATH = os.environ.get("CLASSIFICATION_MODEL_PATH", "/persistent/models/classification_model.onnx")
+
+segment_session = None
+classify_session = None
+
+try:
+    if os.path.exists(SEGMENTATION_MODEL_PATH):
+        segment_session = ort.InferenceSession(SEGMENTATION_MODEL_PATH)
+    else:
+        print(f"[WARN] Segmentation model not found at {SEGMENTATION_MODEL_PATH}")
+except Exception as e:
+    print(f"[ERROR] Failed to load segmentation model: {e}")
+
+try:
+    if os.path.exists(CLASSIFICATION_MODEL_PATH):
+        classify_session = ort.InferenceSession(CLASSIFICATION_MODEL_PATH)
+    else:
+        print(f"[WARN] Classification model not found at {CLASSIFICATION_MODEL_PATH}")
+except Exception as e:
+    print(f"[ERROR] Failed to load classification model: {e}")
+
 
 # Initialize models
 segmentation_model = SegmentationModel(SEGMENTATION_MODEL_PATH)
@@ -95,8 +114,6 @@ def evolve(input_data: EvolutionInput):
         "overlay_image_base64": f"data:image/png;base64,{encoded_image}",
         "changePercentage": round(size_diff_percentage, 1),
         "growthDetected": growth_detected,
-        "colorChangeDetected": False,  # Placeholder - implement color change detection logic
-        "borderChangeDetected": False,  # Placeholder - implement border change detection logic
         "summary": f"Analysis shows a {round(size_diff_percentage, 1)}% change in the lesion size.",
         "recommendations": "Continue to monitor the lesion for further changes. Consider a follow-up with a dermatologist."
     }
