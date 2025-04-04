@@ -6,56 +6,78 @@ import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import { ArrowLeft, Download, AlertTriangle, Info } from "lucide-react"
+import { ArrowLeft, Download, AlertTriangle, Info, ChevronLeft, ChevronRight } from "lucide-react"
 import { PageTransition } from "@/components/page-transition"
 import { motion, AnimatePresence } from "framer-motion"
 
-interface ClassificationResult {
-  prediction: string
-  confidence: number
-  description: string
-  risk: "low" | "medium" | "high"
-  abcde: {
-    asymmetry: number
-    border: number
-    color: number
-    diameter: number
-    evolution: number
-  }
-}
-
-// Mock data for demonstration
-const mockResults: ClassificationResult = {
-  prediction: "Benign Nevus",
-  confidence: 87,
-  description:
-    "This appears to be a common benign nevus (mole). The features suggest a low risk for malignancy, but regular monitoring is always recommended.",
-  risk: "low",
-  abcde: {
-    asymmetry: 15,
-    border: 22,
-    color: 18,
-    diameter: 30,
-    evolution: 10,
-  },
+// Update the interface to match your backend response
+// Update the interface to match your backend response
+interface ABCResult {
+  asymmetry_score: number;
+  border_score: number;
+  color_score: number;
+  traits: string[];
+  classification: string;
+  confidence_score: number;
+  processed_image: string;
+  contour_image: string;
 }
 
 export default function SingleAnalysisResultsPage() {
   const [imageData, setImageData] = useState<string | null>(null)
-  const [results, setResults] = useState<ClassificationResult | null>(null)
+  const [results, setResults] = useState<ABCResult | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [currentImageIndex, setCurrentImageIndex] = useState(0)
+  
+  // Labels for the images in the carousel
+  const imageLabels = [
+    "Original Image",
+    "Processed Image",
+    "Detected Lesion"
+  ]
 
   useEffect(() => {
-    // In a real app, you would fetch results from an API
-    // For this demo, we're using mock data and retrieving the image from localStorage
+    // Retrieve data from localStorage
     const storedImage = localStorage.getItem("analysisImage")
+    const storedResult = localStorage.getItem("analysisResult")
+    
     if (storedImage) {
       setImageData(storedImage)
-      // Simulate loading results
-      setTimeout(() => {
-        setResults(mockResults)
-      }, 500)
     }
+    
+    if (storedResult) {
+      try {
+        const parsedResult = JSON.parse(storedResult) as ABCResult
+        setResults(parsedResult)
+      } catch (error) {
+        console.error("Error parsing analysis results:", error)
+      }
+    }
+    
+    setIsLoading(false)
   }, [])
+
+  // Function to get the current image to display based on index
+  // Function to get the current image to display based on index
+  const getCurrentImage = () => {
+    if (!results) return imageData || "/placeholder.svg"
+    
+    switch (currentImageIndex) {
+      case 0: return imageData || "/placeholder.svg"  // Original
+      case 1: return results.processed_image || imageData  // Processed
+      case 2: return results.contour_image || results.processed_image  // Contour image
+      default: return imageData || "/placeholder.svg"
+    }
+  }
+
+  // Navigation handlers for carousel
+  const nextImage = () => {
+    setCurrentImageIndex((prev) => (prev + 1) % 3)
+  }
+
+  const prevImage = () => {
+    setCurrentImageIndex((prev) => (prev - 1 + 3) % 3)
+  }
 
   if (!imageData) {
     return (
@@ -91,17 +113,54 @@ export default function SingleAnalysisResultsPage() {
             <div className="md:col-span-2">
               <Card>
                 <CardHeader>
-                  <CardTitle>Uploaded Image</CardTitle>
+                  <CardTitle>{imageLabels[currentImageIndex]}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="relative aspect-square rounded-md overflow-hidden border">
-                    <Image
-                      src={imageData || "/placeholder.svg"}
-                      alt="Analyzed skin lesion"
-                      fill
-                      className="object-contain"
-                    />
+                    <AnimatePresence mode="wait">
+                      <motion.div
+                        key={currentImageIndex}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="h-full w-full"
+                      >
+                        <Image
+                          src={getCurrentImage()}
+                          alt={imageLabels[currentImageIndex]}
+                          fill
+                          className="object-contain"
+                        />
+                      </motion.div>
+                    </AnimatePresence>
                   </div>
+                  
+                  {/* Image carousel controls */}
+                  <div className="flex items-center justify-between mt-4">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={prevImage}
+                      className="flex items-center"
+                    >
+                      <ChevronLeft className="h-4 w-4 mr-1" />
+                      Previous
+                    </Button>
+                    <span className="text-sm text-slate-500">
+                      {currentImageIndex + 1} of 3
+                    </span>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={nextImage}
+                      className="flex items-center"
+                    >
+                      Next
+                      <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </div>
+                  
                   <Button variant="outline" className="mt-4 w-full" onClick={() => window.print()}>
                     <Download className="mr-2 h-4 w-4" />
                     Download Report
@@ -112,7 +171,7 @@ export default function SingleAnalysisResultsPage() {
 
             <div className="md:col-span-3 space-y-6">
               <AnimatePresence mode="wait">
-                {results ? (
+                {!isLoading && results ? (
                   <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
@@ -131,34 +190,23 @@ export default function SingleAnalysisResultsPage() {
                         </CardHeader>
                         <CardContent>
                           <div className="flex items-center justify-between mb-2">
-                            <h3 className="text-xl font-bold">{results.prediction}</h3>
-                            <div
-                              className={`px-3 py-1 rounded-full text-sm font-medium ${
-                                results.risk === "low"
-                                  ? "bg-green-100 text-green-800"
-                                  : results.risk === "medium"
-                                    ? "bg-yellow-100 text-yellow-800"
-                                    : "bg-red-100 text-red-800"
-                              }`}
-                            >
-                              {results.risk === "low"
-                                ? "Low Risk"
-                                : results.risk === "medium"
-                                  ? "Medium Risk"
-                                  : "High Risk"}
-                            </div>
+                            <h3 className="text-xl font-bold">{results.classification}</h3>
                           </div>
 
                           <div className="mb-4">
                             <div className="flex justify-between mb-1">
                               <span className="text-sm">Confidence</span>
-                              <span className="text-sm font-medium">{results.confidence}%</span>
+                              <span className="text-sm font-medium">{Math.round(results.confidence_score * 100)}%</span>
                             </div>
-                            <Progress value={results.confidence} className="h-2" />
+                            <Progress value={results.confidence_score * 100} className="h-2" />
                           </div>
 
                           <div className="p-4 bg-slate-50 rounded-md">
-                            <p className="text-slate-700">{results.description}</p>
+                            <p className="text-slate-700">
+                              {results.classification === "Melanoma" 
+                                ? "This lesion shows characteristics that may be concerning. Please consult with a dermatologist promptly."
+                                : "This appears to be a benign lesion. The features suggest a low risk for malignancy, but regular monitoring is always recommended."}
+                            </p>
                           </div>
 
                           <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-md flex">
@@ -190,9 +238,9 @@ export default function SingleAnalysisResultsPage() {
                             <div>
                               <div className="flex justify-between mb-1">
                                 <span className="font-medium">Asymmetry</span>
-                                <span>{results.abcde.asymmetry}%</span>
+                                <span>{Math.round(results.asymmetry_score * 100)}%</span>
                               </div>
-                              <Progress value={results.abcde.asymmetry} className="h-2" />
+                              <Progress value={results.asymmetry_score * 100} className="h-2" />
                               <p className="text-xs text-slate-500 mt-1">
                                 Measures how asymmetrical the lesion appears.
                               </p>
@@ -201,9 +249,9 @@ export default function SingleAnalysisResultsPage() {
                             <div>
                               <div className="flex justify-between mb-1">
                                 <span className="font-medium">Border Irregularity</span>
-                                <span>{results.abcde.border}%</span>
+                                <span>{Math.round(results.border_score * 100)}%</span>
                               </div>
-                              <Progress value={results.abcde.border} className="h-2" />
+                              <Progress value={results.border_score * 100} className="h-2" />
                               <p className="text-xs text-slate-500 mt-1">
                                 Indicates how irregular or uneven the borders are.
                               </p>
@@ -212,35 +260,28 @@ export default function SingleAnalysisResultsPage() {
                             <div>
                               <div className="flex justify-between mb-1">
                                 <span className="font-medium">Color Variation</span>
-                                <span>{results.abcde.color}%</span>
+                                <span>{Math.round(results.color_score * 100)}%</span>
                               </div>
-                              <Progress value={results.abcde.color} className="h-2" />
+                              <Progress value={results.color_score * 100} className="h-2" />
                               <p className="text-xs text-slate-500 mt-1">
                                 Shows the degree of color variation within the lesion.
                               </p>
                             </div>
-
-                            <div>
-                              <div className="flex justify-between mb-1">
-                                <span className="font-medium">Diameter</span>
-                                <span>{results.abcde.diameter}%</span>
+                            
+                            {/* Traits section */}
+                            {results.traits && results.traits.length > 0 && (
+                              <div className="mt-5 pt-4 border-t border-slate-200">
+                                <h4 className="font-medium mb-2">Detected Traits:</h4>
+                                <ul className="space-y-1">
+                                  {results.traits.map((trait, index) => (
+                                    <li key={index} className="text-sm flex items-center">
+                                      <span className="h-2 w-2 bg-primary rounded-full mr-2 flex-shrink-0" />
+                                      {trait}
+                                    </li>
+                                  ))}
+                                </ul>
                               </div>
-                              <Progress value={results.abcde.diameter} className="h-2" />
-                              <p className="text-xs text-slate-500 mt-1">
-                                Relative size of the lesion (higher values indicate larger diameter).
-                              </p>
-                            </div>
-
-                            <div>
-                              <div className="flex justify-between mb-1">
-                                <span className="font-medium">Evolution Risk</span>
-                                <span>{results.abcde.evolution}%</span>
-                              </div>
-                              <Progress value={results.abcde.evolution} className="h-2" />
-                              <p className="text-xs text-slate-500 mt-1">
-                                Estimated risk of the lesion changing over time.
-                              </p>
-                            </div>
+                            )}
                           </div>
                         </CardContent>
                       </Card>
@@ -261,7 +302,7 @@ export default function SingleAnalysisResultsPage() {
                         transition={{ duration: 1, repeat: Number.POSITIVE_INFINITY, ease: "linear" }}
                       ></motion.div>
                       <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>
-                        Analyzing image...
+                        Loading analysis results...
                       </motion.p>
                     </div>
                   </motion.div>
@@ -274,4 +315,3 @@ export default function SingleAnalysisResultsPage() {
     </div>
   )
 }
-
