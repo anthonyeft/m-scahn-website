@@ -9,6 +9,7 @@ import json
 import os
 from utils.helpers import align_mask
 from utils.onnx_models import SegmentationModel, ClassificationModel, process_image_classification
+import onnxruntime as ort
 
 app = FastAPI()
 
@@ -23,29 +24,31 @@ app.add_middleware(
 SEGMENTATION_MODEL_PATH = os.environ.get("SEGMENTATION_MODEL_PATH", "/persistent/models/segmentation_model.onnx")
 CLASSIFICATION_MODEL_PATH = os.environ.get("CLASSIFICATION_MODEL_PATH", "/persistent/models/classification_model.onnx")
 
-segment_session = None
-classify_session = None
+# Add global vars for models
+segmentation_model = None
+classification_model = None
 
-try:
+@app.on_event("startup")
+def load_models():
+    global segmentation_model, classification_model
+
     if os.path.exists(SEGMENTATION_MODEL_PATH):
-        segment_session = ort.InferenceSession(SEGMENTATION_MODEL_PATH)
+        try:
+            segmentation_model = SegmentationModel(SEGMENTATION_MODEL_PATH)
+            print("[INFO] Segmentation model loaded.")
+        except Exception as e:
+            print(f"[ERROR] Segmentation model failed to load: {e}")
     else:
         print(f"[WARN] Segmentation model not found at {SEGMENTATION_MODEL_PATH}")
-except Exception as e:
-    print(f"[ERROR] Failed to load segmentation model: {e}")
 
-try:
     if os.path.exists(CLASSIFICATION_MODEL_PATH):
-        classify_session = ort.InferenceSession(CLASSIFICATION_MODEL_PATH)
+        try:
+            classification_model = ClassificationModel(CLASSIFICATION_MODEL_PATH)
+            print("[INFO] Classification model loaded.")
+        except Exception as e:
+            print(f"[ERROR] Classification model failed to load: {e}")
     else:
         print(f"[WARN] Classification model not found at {CLASSIFICATION_MODEL_PATH}")
-except Exception as e:
-    print(f"[ERROR] Failed to load classification model: {e}")
-
-
-# Initialize models
-segmentation_model = SegmentationModel(SEGMENTATION_MODEL_PATH)
-classification_model = ClassificationModel(CLASSIFICATION_MODEL_PATH)
 
 class ABCInput(BaseModel):
     image_base64: str
@@ -68,6 +71,8 @@ def compress_mask(mask):
 
 @app.post("/analyze")
 def analyze(input_data: ABCInput):
+    if segmentation_model is None or classification_model is None:
+        return {"error": "Models not loaded yet."}
     classification_result, processed_image_base64, contour_image_base64, abc_result = process_image_classification(input_data.image_base64, segmentation_model, classification_model)
 
     # Combine results
@@ -86,6 +91,8 @@ def analyze(input_data: ABCInput):
 
 @app.post("/evolve")
 def evolve(input_data: EvolutionInput):
+    if segmentation_model is None or classification_model is None:
+        return {"error": "Models not loaded yet."}
     mask1 = decompress_mask(input_data.mask1_compressed)
     mask2 = decompress_mask(input_data.mask2_compressed)
 
