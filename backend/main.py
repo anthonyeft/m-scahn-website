@@ -50,11 +50,8 @@ def compress_mask(mask):
 
 @app.post("/analyze")
 def analyze(input_data: ABCInput):
-    classification_result, processed_image_base64, contour_image_base64 = process_image_classification(input_data.image_base64, segmentation_model, classification_model)
-    
-    # Calculate ABC scores using the color corrected image
-    abc_result = calculate_abc_score(image_corrected, mask)
-    
+    classification_result, processed_image_base64, contour_image_base64, abc_result = process_image_classification(input_data.image_base64, segmentation_model, classification_model)
+
     # Combine results
     result = {
         "asymmetry_score": abc_result["asymmetry"],
@@ -65,7 +62,6 @@ def analyze(input_data: ABCInput):
         "confidence_score": classification_result["confidence_score"],
         "processed_image": processed_image_base64,
         "contour_image": contour_image_base64,
-        "mask_compressed": compress_mask(mask)
     }
     
     return result
