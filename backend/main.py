@@ -51,8 +51,8 @@ def evolve(input_data: EvolutionInput):
 
     # Overlay difference: white for mask1, red for mask2 only
     overlay = np.zeros((aligned1.shape[0], aligned1.shape[1], 3), dtype=np.uint8)
+    overlay[aligned2 == 1] = [255, 0, 0]      # Red
     overlay[aligned1 == 1] = [255, 255, 255]  # White
-    overlay[aligned2 == 1] = [255, 0, 0]      # Red (overwrites white if overlap)
 
     _, buffer = cv2.imencode(".png", overlay)
     encoded_image = base64.b64encode(buffer).decode("utf-8")
