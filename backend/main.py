@@ -40,25 +40,10 @@ classification_model = None
 
 @app.on_event("startup")
 def load_models():
-    global segmentation_model, classification_model
-
-    if os.path.exists(SEGMENTATION_MODEL_PATH):
-        try:
-            segmentation_model = SegmentationModel(SEGMENTATION_MODEL_PATH)
-            print("[INFO] Segmentation model loaded.")
-        except Exception as e:
-            print(f"[ERROR] Segmentation model failed to load: {e}")
-    else:
-        print(f"[WARN] Segmentation model not found at {SEGMENTATION_MODEL_PATH}")
-
-    if os.path.exists(CLASSIFICATION_MODEL_PATH):
-        try:
-            classification_model = ClassificationModel(CLASSIFICATION_MODEL_PATH)
-            print("[INFO] Classification model loaded.")
-        except Exception as e:
-            print(f"[ERROR] Classification model failed to load: {e}")
-    else:
-        print(f"[WARN] Classification model not found at {CLASSIFICATION_MODEL_PATH}")
+    # Temporarily disabled to prevent OOM crash
+    print("[INFO] Skipping model loading for redeploy.")
+    pass
+    
 
 class ABCInput(BaseModel):
     image_base64: str
