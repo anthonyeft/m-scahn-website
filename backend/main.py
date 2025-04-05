@@ -26,6 +26,7 @@ from fastapi import UploadFile, File
 
 @app.post("/upload-model")
 async def upload_model(file: UploadFile = File(...)):
+    os.makedirs("/persistent/models", exist_ok=True)  # Ensures directory exists
     save_path = f"/persistent/models/{file.filename}"
     with open(save_path, "wb") as f:
         f.write(await file.read())
