@@ -9,7 +9,6 @@ import json
 import os
 from utils.helpers import align_mask
 from utils.onnx_models import SegmentationModel, ClassificationModel, process_image_classification
-import onnxruntime as ort
 
 app = FastAPI()
 
@@ -21,29 +20,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# TEMPORARY
-from fastapi import UploadFile, File
-
-@app.post("/upload-model")
-async def upload_model(file: UploadFile = File(...)):
-    save_path = f"/persistent/models/{file.filename}"
-    with open(save_path, "wb") as f:
-        f.write(await file.read())
-    return {"status": "uploaded", "path": save_path}
-
 SEGMENTATION_MODEL_PATH = os.environ.get("SEGMENTATION_MODEL_PATH", "/persistent/models/segmentation_model.onnx")
 CLASSIFICATION_MODEL_PATH = os.environ.get("CLASSIFICATION_MODEL_PATH", "/persistent/models/classification_model.onnx")
 
-# Add global vars for models
 segmentation_model = None
 classification_model = None
 
 @app.on_event("startup")
 def load_models():
-    # Temporarily disabled to prevent OOM crash
-    print("[INFO] Skipping model loading for redeploy.")
-    pass
-    
+    global segmentation_model, classification_model
+    if os.path.exists(SEGMENTATION_MODEL_PATH):
+        segmentation_model = SegmentationModel(SEGMENTATION_MODEL_PATH)
+    if os.path.exists(CLASSIFICATION_MODEL_PATH):
+        classification_model = ClassificationModel(CLASSIFICATION_MODEL_PATH)
 
 class ABCInput(BaseModel):
     image_base64: str
@@ -58,20 +47,16 @@ def decompress_mask(compressed_str):
     decompressed = zlib.decompress(base64.b64decode(compressed_str)).decode("utf-8")
     return np.array(json.loads(decompressed)).astype(np.uint8)
 
-def compress_mask(mask):
-    mask_list = mask.tolist()
-    json_data = json.dumps(mask_list)
-    compressed = base64.b64encode(zlib.compress(json_data.encode())).decode("utf-8")
-    return compressed
-
 @app.post("/analyze")
 def analyze(input_data: ABCInput):
     if segmentation_model is None or classification_model is None:
         return {"error": "Models not loaded yet."}
-    classification_result, processed_image_base64, contour_image_base64, abc_result = process_image_classification(input_data.image_base64, segmentation_model, classification_model)
+    
+    classification_result, processed_image_base64, contour_image_base64, abc_result = process_image_classification(
+        input_data.image_base64, segmentation_model, classification_model
+    )
 
-    # Combine results
-    result = {
+    return {
         "asymmetry_score": abc_result["asymmetry"],
         "border_score": abc_result["border_irregularity"],
         "color_score": abc_result["color"],
@@ -81,37 +66,30 @@ def analyze(input_data: ABCInput):
         "processed_image": processed_image_base64,
         "contour_image": contour_image_base64,
     }
-    
-    return result
 
 @app.post("/evolve")
 def evolve(input_data: EvolutionInput):
-    if segmentation_model is None or classification_model is None:
-        return {"error": "Models not loaded yet."}
+    if segmentation_model is None:
+        return {"error": "Segmentation model not loaded."}
+    
     mask1 = decompress_mask(input_data.mask1_compressed)
     mask2 = decompress_mask(input_data.mask2_compressed)
 
-    # Align both masks
     aligned1 = align_mask(mask1)
     aligned2 = align_mask(mask2)
 
-    # Calculate the differences
-    # 1. Size difference percentage
     size1 = np.sum(aligned1)
     size2 = np.sum(aligned2)
     size_diff_percentage = abs(size2 - size1) / max(size1, 1) * 100
-    growth_detected = size2 > size1 * 1.1  # 10% growth threshold
-    
-    # 2. Create overlay
-    overlay = np.zeros((aligned1.shape[0], aligned1.shape[1], 3), dtype=np.uint8)
-    overlay[aligned2 == 1] = [255, 0, 0]      # Red for new image
-    overlay[aligned1 == 1] = [255, 255, 255]  # White for old image
-    
-    # Encode overlay image
+    growth_detected = size2 > size1 * 1.1
+
+    overlay = np.zeros((*aligned1.shape, 3), dtype=np.uint8)
+    overlay[aligned2 == 1] = [255, 0, 0]
+    overlay[aligned1 == 1] = [255, 255, 255]
+
     _, buffer = cv2.imencode(".png", overlay)
     encoded_image = base64.b64encode(buffer).decode("utf-8")
-    
-    # Create response with more detailed evolution analysis
+
     return {
         "overlay_image_base64": f"data:image/png;base64,{encoded_image}",
         "changePercentage": round(size_diff_percentage, 1),
@@ -120,7 +98,6 @@ def evolve(input_data: EvolutionInput):
         "recommendations": "Continue to monitor the lesion for further changes. Consider a follow-up with a dermatologist."
     }
 
-# Health check endpoint
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
